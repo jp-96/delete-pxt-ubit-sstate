@@ -1,0 +1,13 @@
+{
+  "sstate.defineDo|block": "state: $name DO/, every $interval ms",
+  "sstate.defineEntry|block": "state: $name ENTRY/, $prevName",
+  "sstate.defineExit|block": "state: $name EXIT/, $nextName",
+  "sstate.defineState|block": "define state: $name, $stateName",
+  "sstate.defineTransition|block": "state: $name TRIGGER: $trigger TO: $to",
+  "sstate.fire|block": "fire trigger $trigger",
+  "sstate.start|block": "start $initial",
+  "sstate|block": "sstate",
+  "{id:category}Sstate": "Sstate",
+  "{id:group}Command": "Command",
+  "{id:group}Define": "Define"
+}
