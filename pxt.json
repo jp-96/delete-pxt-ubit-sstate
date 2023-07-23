@@ -1,5 +1,5 @@
 {
-    "name": "pxt-ubit-extension",
+    "name": "pxt-ubit-sstate",
     "description": "",
     "dependencies": {
         "core": "*"
@@ -8,10 +8,7 @@
         "README.md",
         "enums.d.ts",
         "shims.d.ts",
-        "custom.ts",
-        "custom.cpp",
-        "lib/customlib.h",
-        "lib/customlib.cpp"
+        "sstate.ts"
     ],
     "testFiles": [
         "test.ts"

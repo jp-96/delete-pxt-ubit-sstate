@@ -1,0 +1,22 @@
+{
+  "sstate": "Use this file to define custom functions and blocks.\nRead more at https://makecode.microbit.org/blocks/custom\n\nsstate blocks\nicon: a Unicode identifier for an icon from the Font Awesome icon set.\nhttp://fontawesome.io/icons",
+  "sstate.defineDo": "define DO",
+  "sstate.defineDo|param|body": "code to run on DO every interval time.",
+  "sstate.defineDo|param|interval": "interval time",
+  "sstate.defineDo|param|name": "state name",
+  "sstate.defineEntry": "define ENTRY",
+  "sstate.defineEntry|param|body": "code to run on ENTRY. prevName is a previous state name.",
+  "sstate.defineEntry|param|name": "state name",
+  "sstate.defineExit": "define EXIT",
+  "sstate.defineExit|param|body": "code to run on EXIT. nextName is a next state name.",
+  "sstate.defineExit|param|name": "state name",
+  "sstate.defineState": "define state",
+  "sstate.defineState|param|body": "code to run",
+  "sstate.defineState|param|name": "state name, is assigned to the stateName variable",
+  "sstate.defineTransition": "define transition",
+  "sstate.defineTransition|param|name": "@param trigger ",
+  "sstate.fire": "fire trigger",
+  "sstate.fire|param|trigger": "trigger name",
+  "sstate.start": "start state machine",
+  "sstate.start|param|initial": "initial state name"
+}
