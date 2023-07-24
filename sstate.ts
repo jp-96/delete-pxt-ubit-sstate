@@ -145,58 +145,258 @@ namespace sstate {
         get to() { return this._to }
     }
 
-    let entryProcList: EntryProc[] = []
-    let doProcList: DoProc[] = []
-    let exitProcList: ExitProc[] = []
+    enum ProcId {
+        None,
+        Start,
+        Into,
+        Enter,
+        Do,
+        Exit,
+        Transit
+    }
 
-    let transitionList: Transition[] = []
+    class StateMachine {
 
-    let triggerQueue: string[] = []
+        // ID
+        _id: string
 
-    let state = ""
-    let activeDoProcList: DoProc[] = []
-    let autoTrantision: Transition = undefined
-    let activeTransitionList: Transition[] = []
+        // define
+        _defineEntryProcList: EntryProc[]
+        _defineDoProcList: DoProc[]
+        _defineExitProcList: ExitProc[]
+        _defineTransitionList: Transition[]
 
-    /**
-     * transit
-     * @param transition instance or undefined 
-     * @returns true: transit, false: (nop)
-     */
-    function transit(transition: Transition) {
-        if (!transition) {
-            return false
+        // current state
+        _state: string
+        _activeEntryProcList: EntryProc[]
+        _activeDoProcList: DoProc[]
+        _activeExitProcList: ExitProc[]
+        _activeTrantisionAuto: Transition
+        _activeTransitionList: Transition[]
+
+        // current transition
+        _lastTransition: Transition
+
+        // trigger(queue)
+        _triggerQueue: string[]
+
+        // proc
+        _initialState: string
+        _proc: ProcId
+
+        /**
+         * constructor
+         * @param id state machine ID
+         */
+        constructor(id: string) {
+            this._id = id
+            this._defineEntryProcList = []
+            this._defineDoProcList = []
+            this._defineExitProcList = []
+            this._defineTransitionList = []
+            this._state = "" // 開始・終了状態
+            this._activeEntryProcList = []
+            this._activeDoProcList = []
+            this._activeExitProcList = []
+            this._activeTrantisionAuto = undefined
+            this._activeTransitionList = []
+            this._triggerQueue = []
+            this._lastTransition = undefined
+            this._proc = ProcId.None
         }
-        const prev = state
-        const next = transition.to
-        // EXIT
-        for (const obj of exitProcList) {
-            if (obj.name == prev) {
-                obj.execute(transition.to)
+
+        defineEntry(name: string, body: (prevName: string) => void) {
+            if (name.length > 0) {
+                const item = new EntryProc(name, body)
+                this._defineEntryProcList.push(item)
             }
         }
 
-        state = next // change state
+        defineDo(name: string, interval: number, body: () => void) {
+            if (name.length > 0) {
+                const item = new DoProc(name, interval, body)
+                this._defineDoProcList.push(item)
+            }
+        }
 
-        activeDoProcList = doProcList.filter((item) => {
-            if (item.name == next) {
-                item.mustDo()
+        defineExit(name: string, body: (nextName: string) => void) {
+            if (name.length > 0) {
+                const item = new ExitProc(name, body)
+                this._defineExitProcList.push(item)
+            }
+        }
+
+        defineTransition(name: string, trigger: string, to: string) {
+            if (name.length > 0) {
+                const item = new Transition(name, trigger, to)
+                this._defineTransitionList.push(item)
+            }
+        }
+
+        _procNone() {
+            // nop
+        }
+
+        _procStartToInto(): boolean {
+            this._lastTransition = new Transition("", "", this._initialState)
+            return this._procInto()
+        }
+
+        _procInto(): boolean {
+            const next = this._lastTransition.to
+            // current state
+            this._state = next
+            this._activeEntryProcList = this._defineEntryProcList.filter((item) => item.name == next)
+            this._activeDoProcList = this._defineDoProcList.filter((item) => {
+                if (item.name == next) {
+                    item.mustDo()
+                    return true
+                } else {
+                    return false
+                }
+            })
+            this._activeExitProcList = this._defineExitProcList.filter((item) => item.name == next)
+            this._activeTransitionList = this._defineTransitionList.filter((item) => item.name == next)
+            this._activeTrantisionAuto = this._activeTransitionList.find((item) => item.trigger == "")
+            return (this._state.length > 0)
+        }
+
+        _procEnter() {
+            const prev = this._lastTransition.name
+            for (const entryProc of this._activeEntryProcList) {
+                entryProc.execute(prev)
+            }
+        }
+
+        _procDo() {
+            for (const doProc of this._activeDoProcList) {
+                doProc.execute()
+            }
+        }
+
+        _procExit() {
+            const next = this._lastTransition.to
+            for (const exitProc of this._activeExitProcList) {
+                exitProc.execute(next)
+            }
+        }
+
+        _procTransit(): boolean {
+            const transition = (() => {
+                // trigger
+                while (this._triggerQueue.length > 0) {
+                    // transit
+                    const trigger = this._triggerQueue.shift()
+                    const transition = this._activeTransitionList.find((item) => item.trigger == trigger)
+                    if (transition) {
+                        return transition
+                    }
+                }
+                // auto
+                if (this._activeTrantisionAuto) {
+                    return this._activeTrantisionAuto
+                }
+                return undefined
+            })()
+            if (transition) {
+                this._lastTransition = transition
                 return true
             } else {
                 return false
             }
-        })
-        activeTransitionList = transitionList.filter((item) => item.name == next)
-        autoTrantision = activeTransitionList.find((item) => item.trigger == "")
+        }
 
-        // ENTRY
-        for (const obj of entryProcList) {
-            if (obj.name == state) {
-                obj.execute(prev)
+        tick(): number {
+            let interval = 0
+            switch (this._proc) {
+                case ProcId.None:
+                    this._procNone()
+                    interval = -1
+                    break;
+                case ProcId.Start:
+                    if (this._procStartToInto()) {
+                        this._proc = ProcId.Enter
+                    } else {
+                        this._proc = ProcId.None
+                    }
+                    break;
+                case ProcId.Into:
+                    if (this._procInto()) {
+                        this._proc = ProcId.Enter
+                    } else {
+                        this._proc = ProcId.None
+                    }
+                    break;
+                case ProcId.Enter:
+                    this._procEnter()
+                    this._proc = ProcId.Do
+                    break;
+                case ProcId.Do:
+                    this._procDo()
+                    this._proc = ProcId.Transit
+                    break;
+                case ProcId.Transit:
+                    if (this._procTransit()) {
+                        this._proc = ProcId.Exit
+                    } else {
+                        this._proc = ProcId.Do
+                        if (this._activeDoProcList.length > 0) {
+                            interval = 100
+                        } else {
+                            interval = -1
+                        }
+                    }
+                    break;
+                case ProcId.Exit:
+                    this._procExit()
+                    this._proc = ProcId.Into
+                    break;
+                default:
+                    // panic
+                    interval = -1
+                    break;
+
+            }
+            return interval
+        }
+
+        start(initial: string): boolean {
+            if (this._proc == ProcId.None) {
+                this._proc = ProcId.Start
+                this._initialState = initial
+                return true
+            } else {
+                return false
             }
         }
 
-        return true
+        fire(trigger: string) {
+            if (trigger.length > 0) {
+                // queuing
+                this._triggerQueue.push(trigger)
+            }
+        }
+
+    }
+
+    let stateMachine: StateMachine = new StateMachine("default sstate")
+
+    const MICROBIT_CUSTOM_ID_BASE = 32768
+    const TICK_EVENT_ID = MICROBIT_CUSTOM_ID_BASE + 100
+
+    control.onEvent(TICK_EVENT_ID, EventBusValue.MICROBIT_EVT_ANY, function () {
+        const index = control.eventValue()
+        if (index == 0) {
+            const interval = stateMachine.tick()
+            if (interval >= 0) {
+                basic.pause(interval)
+                tickNext(index)
+            }
+        }
+    })
+
+    function tickNext(index: number) {
+        control.raiseEvent(TICK_EVENT_ID, index)
     }
 
     /**
@@ -208,36 +408,9 @@ namespace sstate {
     //% weight=80
     //% group="Command"
     export function start(initial: string) {
-        if ("" != state) {
-            return
+        if (stateMachine.start(initial)) {
+            tickNext(0)
         }
-        control.inBackground(function () {
-            const initialTransition = new Transition("", "", initial)
-            transit(initialTransition)
-            while ("" != state) {
-                // DO
-                for (const doProc of activeDoProcList) {
-                    doProc.execute()
-                }
-
-                // auto trantision
-                if (transit(autoTrantision)) {
-                    continue;   // while ("" != state)
-                }
-
-                basic.pause(100)    // wait for idle
-
-                // trigger?
-                while (triggerQueue.length > 0) {
-                    // transit
-                    const trigger = triggerQueue.shift()
-                    const transition = activeTransitionList.find((item) => item.trigger == trigger)
-                    if (transit(transition)) {
-                        break // while (triggerQueue.length > 0)
-                    }
-                }
-            }
-        })
     }
 
     /**
@@ -248,10 +421,8 @@ namespace sstate {
     //% weight=90
     //% group="Command"
     export function fire(trigger: string) {
-        if (trigger.length > 0) {
-            // queuing
-            triggerQueue.push(trigger)
-        }
+        stateMachine.fire(trigger)
+        tickNext(0)
     }
 
     /**
@@ -264,9 +435,7 @@ namespace sstate {
     //% weight=140
     //% group="Define"
     export function defineState(name: string, body: (stateName: string) => void) {
-        if (name.length > 0) {
-            body(name)
-        }
+        body(name)
     }
 
     /**
@@ -280,10 +449,7 @@ namespace sstate {
     //% weight=130
     //% group="Define"
     export function defineEntry(name: string, body: (prevName: string) => void) {
-        if (name.length > 0) {
-            const item = new EntryProc(name, body)
-            entryProcList.push(item)
-        }
+        stateMachine.defineEntry(name, body)
     }
 
     /**
@@ -298,10 +464,7 @@ namespace sstate {
     //% weight=120
     //% group="Define"
     export function defineDo(name: string, interval: number, body: () => void) {
-        if (name.length > 0) {
-            const item = new DoProc(name, interval, body)
-            doProcList.push(item)
-        }
+        stateMachine.defineDo(name, interval, body)
     }
 
     /**
@@ -315,10 +478,7 @@ namespace sstate {
     //% weight=110
     //% group="Define"
     export function defineExit(name: string, body: (nextName: string) => void) {
-        if (name.length > 0) {
-            const item = new ExitProc(name, body)
-            exitProcList.push(item)
-        }
+        stateMachine.defineExit(name, body)
     }
 
     /**
@@ -331,10 +491,7 @@ namespace sstate {
     //% weight=100
     //% group="Define"
     export function defineTransition(name: string, trigger: string, to: string) {
-        if (name.length > 0) {
-            const item = new Transition(name, trigger, to)
-            transitionList.push(item)
-        }
+        stateMachine.defineTransition(name, trigger, to)
     }
 
 }
