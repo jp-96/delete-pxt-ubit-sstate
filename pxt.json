@@ -1,5 +1,6 @@
 {
     "name": "pxt-ubit-sstate",
+    "version": "0.2.0",
     "description": "",
     "dependencies": {
         "core": "*"
