@@ -1,38 +1,40 @@
 // tests go here; this will not be compiled when this package is used as an extension.
-sstate.defineState("init", function (stateName) {
-    sstate.defineExit(stateName, function (nextName) {
-        basic.showString("to:" + nextName + ">")
+enum States {
+    Idle,
+    Off,
+    On,
+    Blink,
+    Blink2
+}
+enum Triggers {
+    Completion,
+    A,
+    B
+}
+sstate.defineState(States.Idle, function (state) {
+    sstate.defineExit(state, function (next) {
+        basic.showString("to:" + next + ">")
     })
-    sstate.defineTransition(stateName, "", "off")
+    sstate.defineTransition(state, States.Blink2, Triggers.Completion)
 })
-sstate.defineState("off", function (stateName) {
-    sstate.defineEntry(stateName, function (prevName) {
+sstate.defineState(States.Off, function (state) {
+    sstate.defineEntry(state, function (prev) {
         basic.clearScreen()
-        // // Workaround: runtime error (020)
-        // basic.showLeds(`
-        //     . . . . .
-        //     . . . . .
-        //     . . . . .
-        //     . . . . .
-        //     . . . . .
-        //     `)
     })
-    sstate.defineTransition(stateName, "a", "on")
+    sstate.defineTransition(state, States.On, Triggers.A)
 })
-sstate.defineState("on", function (stateName) {
-    sstate.defineEntry(stateName, function (prevName) {
+sstate.defineState(States.On, function (state) {
+    sstate.defineEntry(state, function (prev) {
         basic.showIcon(IconNames.Heart)
     })
-    sstate.defineTransition(stateName, "a", "blink")
-    sstate.defineTransition(stateName, "b", "off")
+    sstate.defineTransition(state, States.Blink, Triggers.A)
+    sstate.defineTransition(state, States.Off, Triggers.B)
 })
-sstate.defineState("blink", function (stateName) {
-    sstate.defineTransition(stateName, "a", "blink2")
-    sstate.defineTransition(stateName, "b", "off")
-    sstate.defineEntry(stateName, function (prevName) {
+sstate.defineState(States.Blink, function (state) {
+    sstate.defineEntry(state, function (prev) {
         blinkingState = 0
     })
-    sstate.defineDo(stateName, 2000, function () {
+    sstate.defineDo(state, 500, function () {
         if (1 == blinkingState) {
             led.setBrightness(200)
             blinkingState = 0
@@ -41,17 +43,20 @@ sstate.defineState("blink", function (stateName) {
             blinkingState = 1
         }
     })
-    sstate.defineExit(stateName, function (nextName) {
+    sstate.defineExit(state, function (next) {
         led.setBrightness(255)
     })
+    sstate.defineTransition(state, States.Blink2, Triggers.A)
+    sstate.defineTransition(state, States.Off, Triggers.B)
 })
-sstate.defineState("blink2", function (stateName) {
-    sstate.defineTransition(stateName, "a", "on")
-    sstate.defineTransition(stateName, "b", "off")
-    sstate.defineEntry(stateName, function (prevName) {
+sstate.defineState(States.Blink2, function (state) {
+    sstate.defineEntry(state, function (prev) {
+        if (States.Idle == prev) {
+            basic.showIcon(IconNames.Butterfly)
+        }
         blinkingState = 0
     })
-    sstate.defineDo(stateName, 100, function () {
+    sstate.defineDo(state, 100, function () {
         if (1 == blinkingState) {
             led.setBrightness(255)
             blinkingState = 0
@@ -60,15 +65,17 @@ sstate.defineState("blink2", function (stateName) {
             blinkingState = 1
         }
     })
-    sstate.defineExit(stateName, function (nextName) {
+    sstate.defineExit(state, function (next) {
         led.setBrightness(255)
     })
+    sstate.defineTransition(state, States.On, Triggers.A)
+    sstate.defineTransition(state, States.Off, Triggers.B)
 })
 input.onButtonPressed(Button.A, function () {
-    sstate.fire("a")
+    sstate.fire(Triggers.A)
 })
 input.onButtonPressed(Button.B, function () {
-    sstate.fire("b")
+    sstate.fire(Triggers.B)
 })
 let blinkingState = 0
-sstate.start("off")
+sstate.start(States.Idle)
