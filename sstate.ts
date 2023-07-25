@@ -14,15 +14,18 @@ namespace sstate {
 
     // tick scheduler
     const MICROBIT_CUSTOM_ID_BASE = 32768
-    const TICK_EVENT_ID = MICROBIT_CUSTOM_ID_BASE + 100
+    const DEFALUT_TICK_EVENT_ID = MICROBIT_CUSTOM_ID_BASE + 100
+    let tickEventId = -1    // initialize: initialTickEventId(DEFALUT_TICK_EVENT_ID)
 
     function tickNext(machineId: number, nextTick: number) {
-        const tick = control.millis()
-        const delay = nextTick - tick
-        if (delay > 0) {
-            basic.pause(delay)
+        if (tickEventId > 0) {
+            const tick = control.millis()
+            const delay = nextTick - tick
+            if (delay > 0) {
+                basic.pause(delay)
+            }
+            control.raiseEvent(tickEventId, machineId)
         }
-        control.raiseEvent(TICK_EVENT_ID, machineId)
     }
 
     /**
@@ -60,8 +63,8 @@ namespace sstate {
     class DoAction {
         // define
         _state: number
-        _cb: () => void
         _ms: number
+        _cb: () => void
 
         // callback tick
         _lastTick: number
@@ -71,13 +74,13 @@ namespace sstate {
         /**
          * constructor
          * @param state (States) state
-         * @param cb code to run
          * @param ms interval (ms)
+         * @param cb code to run
          */
-        constructor(state: number, cb: () => void, ms: number) {
+        constructor(state: number, ms: number, cb: () => void) {
             this._state = state
-            this._cb = cb
             this._ms = ms
+            this._cb = cb
             this._lastTick = control.millis()
             this._nextTick = this._lastTick
             this._tickForce = true
@@ -241,8 +244,8 @@ namespace sstate {
             this._defineEntryActions.push(item)
         }
 
-        defineDo(state: number, cb: () => void, ms: number) {
-            const item = new DoAction(state, cb, ms)
+        defineDo(state: number, ms: number, cb: () => void) {
+            const item = new DoAction(state, ms, cb)
             this._defineDoActions.push(item)
         }
 
@@ -403,109 +406,156 @@ namespace sstate {
 
     let stateMachine: StateMachine = new StateMachine(0)
 
-    control.onEvent(TICK_EVENT_ID, EventBusValue.MICROBIT_EVT_ANY, function () {
-        const machineId = control.eventValue()
-        if (machineId == 0) {
-            const interval = stateMachine.tick()
-            if (interval >= 0) {
-                const nextTick = control.millis() + interval
-                tickNext(0, nextTick)
-            }
-        }
-    })
-
-    /**
-     * start state machine
-     * @param state (States) default state
-     */
-    //% block="start $state"
-    //% weight=80
-    //% group="Command"
-    export function start(state: number) {
-        if (stateMachine.start(state)) {
-            tickNext(0, -1)
+    function initialTickEventId(eventId: number) {
+        if (tickEventId <= 0) {
+            tickEventId = eventId
+            control.onEvent(tickEventId, EventBusValue.MICROBIT_EVT_ANY, function () {
+                const machineId = control.eventValue()
+                if (machineId == 1) {
+                    const interval = stateMachine.tick()
+                    if (interval >= 0) {
+                        const nextTick = control.millis() + interval
+                        tickNext(machineId, nextTick)
+                    }
+                }
+            })
         }
     }
 
     /**
-     * fire trigger
-     * @param trigger (Triggers) trigger
+     * States
      */
-    //% block="fire trigger $trigger"
-    //% weight=90
-    //% group="Command"
-    export function fire(trigger: number) {
-        stateMachine.fire(trigger)
-        tickNext(0, -1)
+    //% shim=ENUM_GET
+    //% blockId=state_enum_shim
+    //% block="State $arg"
+    //% enumName="States"
+    //% enumMemberName="state"
+    //% enumPromptHint="e.g. LED_On, LED_Off, LED_Blink ..."
+    //% enumInitialMembers="Idle"
+    export function _stateEnumShim(arg: number) {
+        return arg;
+    }
+
+    /**
+     * Triggers
+     * notes: Triggers.Completion for the trigger, the transition is a Completion Transition.
+     */
+    //% shim=ENUM_GET
+    //% blockId=trigger_enum_shim
+    //% block="Trigger $arg"
+    //% enumName="Triggers"
+    //% enumMemberName="trigger"
+    //% enumPromptHint="e.g. On, Off, Up, Down ..."
+    //% enumInitialMembers="Completion"
+    export function _triggerEnumShim(arg: number) {
+        return arg;
     }
 
     /**
      * define state
-     * @param name state name, is assigned to the stateName variable
+     * @param arg state (States)
      * @param body code to run
      */
-    //% block="define state: $name, $stateName"
-    //% draggableParameters
+    //% block="define $arg : $state"
+    //% arg.shadow="state_enum_shim"
+    //% draggableParameters="reporter"
     //% weight=140
-    //% group="Define"
-    export function defineState(state: number, body: (statestate: number) => void) {
-        body(state)
+    export function defineState(arg: number, body: (state: number) => void) {
+        body(arg)
     }
 
     /**
-     * define ENTRY
-     * @param name state name
-     * @param body code to run on ENTRY. prevName is a previous state name.
+     * define ENTRY action.
+     * prev is a previous state.
+     * @param state state (States)
+     * @param body code to run
      */
-    //% block="state: $name ENTRY/, $prevName"
-    //% draggableParameters
+    //% block="on entry from $prev : $state"
+    //% state.shadow="state_enum_shim"
+    //% draggableParameters="reporter"
     //% handlerStatement
     //% weight=130
-    //% group="Define"
+    //% group="Action"
     export function defineEntry(state: number, body: (prev: number) => void) {
         stateMachine.defineEntry(state, body)
     }
 
     /**
-     * define DO
-     * @param name state name
-     * @param cb code to run on DO every interval time.
-     * @param ms interval time
+     * define DO action.
+     * @param state state (States)
+     * @param ms interval time (milliseconds)
+     * @param body code to run
      */
-    //% block="state: $name DO/, every $interval ms"
-    //% handlerStatement
+    //% block="on do every $ms ms : $state"
+    //% state.shadow="state_enum_shim"
     //% ms.shadow="timePicker"
+    //% handlerStatement
     //% weight=120
-    //% group="Define"
-    export function defineDo(state: number, cb: () => void, ms: number) {
-        stateMachine.defineDo(state, cb, ms)
+    //% group="Action"
+    export function defineDo(state: number, ms: number, body: () => void) {
+        stateMachine.defineDo(state, ms, body)
     }
 
     /**
-     * define EXIT
-     * @param state state name
-     * @param cb code to run on EXIT. nextName is a next state name.
+     * define EXIT action.
+     * next is a next state.
+     * @param state state (States)
+     * @param body code to run
      */
-    //% block="state: $name EXIT/, $nextName"
-    //% draggableParameters
+    //% block="on exit to $next : $state"
+    //% state.shadow="state_enum_shim"
+    //% draggableParameters="reporter"
     //% handlerStatement
     //% weight=110
-    //% group="Define"
-    export function defineExit(state: number, cb: (nextstate: number) => void) {
-        stateMachine.defineExit(state, cb)
+    //% group="Action"
+    export function defineExit(state: number, body: (next: number) => void) {
+        stateMachine.defineExit(state, body)
     }
 
     /**
-     * define transition
-     * @param from 
-     * @param to 
-     * @param trigger 
+     * define transition.
+     * @param from state from (States)
+     * @param to state to (States)
+     * @param trigger trigger (Triggers)
      */
-    //% block="state: $name TRIGGER: $trigger TO: $to"
+    //% block="trasition to $to when $trigger occur : $from"
+    //% from.shadow="state_enum_shim"
+    //% to.shadow="state_enum_shim"
+    //% trigger.shadow="trigger_enum_shim"
     //% weight=100
-    //% group="Define"
+    //% group="Transition"
     export function defineTransition(from: number, to: number, trigger: number) {
         stateMachine.defineTransition(from, to, trigger)
+    }
+
+    /**
+     * start state machine
+     * @param state default state (States)
+     */
+    //% block="start $state"
+    //% state.shadow="state_enum_shim"
+    //% weight=80
+    //% group="Command"
+    export function start(state: number) {
+        initialTickEventId(DEFALUT_TICK_EVENT_ID)
+        if (stateMachine.start(state)) {
+            const machineId = 1
+            tickNext(machineId, -1)
+        }
+    }
+
+    /**
+     * fire trigger
+     * @param trigger trigger (Triggers)
+     */
+    //% block="fire $trigger"
+    //% trigger.shadow="trigger_enum_shim"
+    //% weight=90
+    //% group="Command"
+    export function fire(trigger: number) {
+        stateMachine.fire(trigger)
+        const machineId = 1
+        tickNext(machineId, -1)
     }
 
 }
