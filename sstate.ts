@@ -1,32 +1,15 @@
 /**
-* Use this file to define custom functions and blocks.
-* Read more at https://makecode.microbit.org/blocks/custom
-*/
-
-/**
  * sstate blocks
  * icon: a Unicode identifier for an icon from the Font Awesome icon set.
  *       http://fontawesome.io/icons
  */
 //% weight=100 color="#4C97FF" icon="\uf362"
-//% groups="['Command', 'Define']"
+//% groups="['Action', 'Command', 'Declare', 'Transition']"
 namespace sstate {
 
-    // tick scheduler
-    const MICROBIT_CUSTOM_ID_BASE = 32768
-    const DEFALUT_TICK_EVENT_ID = MICROBIT_CUSTOM_ID_BASE + 100
-    let tickEventId = -1    // initialize: initialTickEventId(DEFALUT_TICK_EVENT_ID)
-
-    function tickNext(machineId: number, nextTick: number) {
-        if (tickEventId > 0) {
-            const tick = control.millis()
-            const delay = nextTick - tick
-            if (delay > 0) {
-                basic.pause(delay)
-            }
-            control.raiseEvent(tickEventId, machineId)
-        }
-    }
+    const STATE_TERM = -2   // "*"(to)
+    const STATE_INIT = -1   // "*"
+    const TRIGGER_NONE = 0  // ""
 
     /**
      * EntryAction
@@ -61,7 +44,7 @@ namespace sstate {
      * DoAction
      */
     class DoAction {
-        // define
+        // declare
         _state: number
         _ms: number
         _cb: () => void
@@ -116,7 +99,7 @@ namespace sstate {
      * ExitAction
      */
     class ExitAction {
-        // define
+        // declare
         _state: number
         _cb: (next: number) => void
 
@@ -146,7 +129,7 @@ namespace sstate {
      * Transition
      */
     class Transition {
-        // define
+        // declare
         _from: number
         _to: number
         _trigger: number
@@ -192,12 +175,14 @@ namespace sstate {
 
     class StateMachine {
 
-        // define
-        _id: number
-        _defineEntryActions: EntryAction[]
-        _defineDoActions: DoAction[]
-        _defineExitActions: ExitAction[]
-        _defineTransitions: Transition[]
+        // machine ID
+        _machineId: number
+
+        // declare
+        _declareEntryActions: EntryAction[]
+        _declareDoActions: DoAction[]
+        _declareExitActions: ExitAction[]
+        _declareTransitions: Transition[]
 
         // current state
         _state: number
@@ -215,48 +200,52 @@ namespace sstate {
         _triggerQueue: number[]
 
         // current transition
-        _lastTransition: Transition
+        _transitFrom: number
+        _transitTo: number
 
         /**
          * constructor
          * @param id (Machines) state machine ID
          */
         constructor(id: number) {
-            this._id = id
-            this._defineEntryActions = []
-            this._defineDoActions = []
-            this._defineExitActions = []
-            this._defineTransitions = []
-            this._state = -1    // <0: initial, >=0: (States)
+            this._machineId = id
+            this._declareEntryActions = []
+            this._declareDoActions = []
+            this._declareExitActions = []
+            this._declareTransitions = []
+            this._state = STATE_INIT    // initial
             this._entryActions = []
             this._doActions = []
             this._exitActions = []
             this._transitions = []
             this._completionTransition = undefined
-            this._defaultState = -1
+            this._defaultState = STATE_TERM
             this._proc = Procs.Unproc
             this._triggerQueue = []
-            this._lastTransition = undefined
+            this._transitFrom = STATE_TERM  // terminate
+            this._transitTo = STATE_INIT    // initial
         }
 
-        defineEntry(state: number, cb: (prev: number) => void) {
+        get machineId() { return this._machineId }
+
+        declareEntry(state: number, cb: (prev: number) => void) {
             const item = new EntryAction(state, cb)
-            this._defineEntryActions.push(item)
+            this._declareEntryActions.push(item)
         }
 
-        defineDo(state: number, ms: number, cb: () => void) {
+        declareDo(state: number, ms: number, cb: () => void) {
             const item = new DoAction(state, ms, cb)
-            this._defineDoActions.push(item)
+            this._declareDoActions.push(item)
         }
 
-        defineExit(state: number, cb: (next: number) => void) {
+        declareExit(state: number, cb: (next: number) => void) {
             const item = new ExitAction(state, cb)
-            this._defineExitActions.push(item)
+            this._declareExitActions.push(item)
         }
 
-        defineTransition(from: number, to: number, trigger: number) {
+        declareTransition(from: number, to: number, trigger: number) {
             const item = new Transition(from, to, trigger)
-            this._defineTransitions.push(item)
+            this._declareTransitions.push(item)
         }
 
         _procNone() {
@@ -264,16 +253,17 @@ namespace sstate {
         }
 
         _procStartToInto(): boolean {
-            this._lastTransition = new Transition(-1, this._defaultState, -1)
+            this._transitFrom = this._transitTo
+            this._transitTo = this._defaultState
             return this._procInto()
         }
 
         _procInto(): boolean {
-            const next = this._lastTransition.to
+            const next = this._transitTo
             // current state
             this._state = next
-            this._entryActions = this._defineEntryActions.filter((item) => item.state == next)
-            this._doActions = this._defineDoActions.filter((item) => {
+            this._entryActions = this._declareEntryActions.filter((item) => item.state == next)
+            this._doActions = this._declareDoActions.filter((item) => {
                 if (item.state == next) {
                     item.forceTick()
                     return true
@@ -281,14 +271,14 @@ namespace sstate {
                     return false
                 }
             })
-            this._exitActions = this._defineExitActions.filter((item) => item.state == next)
-            this._transitions = this._defineTransitions.filter((item) => item.from == next)
+            this._exitActions = this._declareExitActions.filter((item) => item.state == next)
+            this._transitions = this._declareTransitions.filter((item) => item.from == next)
             this._completionTransition = this._transitions.find((item) => item.trigger == 0)
             return (this._state >= 0)
         }
 
         _procEnter() {
-            const prev = this._lastTransition.from
+            const prev = this._transitFrom
             for (const entryProc of this._entryActions) {
                 entryProc.execute(prev)
             }
@@ -301,7 +291,7 @@ namespace sstate {
         }
 
         _procExit() {
-            const next = this._lastTransition.to
+            const next = this._transitTo
             for (const exitProc of this._exitActions) {
                 exitProc.execute(next)
             }
@@ -325,19 +315,20 @@ namespace sstate {
                 return undefined
             })()
             if (transition) {
-                this._lastTransition = transition
+                this._transitFrom = transition.from
+                this._transitTo = transition.to
                 return true
             } else {
                 return false
             }
         }
 
-        tick(): number {
-            let interval = 0 // zero sleep
+        tick(): boolean {
+            let tickNext = true // ticking
             switch (this._proc) {
                 case Procs.Unproc:
                     this._procNone()
-                    interval = -1   // none
+                    tickNext = false    // none
                     break;
                 case Procs.StartAndInto:
                     if (this._procStartToInto()) {
@@ -366,11 +357,7 @@ namespace sstate {
                         this._proc = Procs.Exit
                     } else {
                         this._proc = Procs.Do
-                        if (this._doActions.length > 0) {
-                            interval = 100 // 100ms (tick)
-                        } else {
-                            interval = -1 // none
-                        }
+                        tickNext = false    // none
                     }
                     break;
                 case Procs.Exit:
@@ -380,11 +367,10 @@ namespace sstate {
                 default:
                     // panic
                     this._proc = Procs.Panic
-                    interval = -1 // none
+                    tickNext = false    // none
                     break;
-
             }
-            return interval
+            return tickNext
         }
 
         start(state: number): boolean {
@@ -401,24 +387,36 @@ namespace sstate {
             // queuing
             this._triggerQueue.push(trigger)
         }
-
     }
 
-    let stateMachine: StateMachine = new StateMachine(0)
+    let mainStateMachine: StateMachine = new StateMachine(1)
 
-    function initialTickEventId(eventId: number) {
-        if (tickEventId <= 0) {
+    let tickEventId = -1
+
+    function tickNext(machineId: number) {
+        control.raiseEvent(tickEventId, machineId)
+    }
+
+    function initialTickEventId(eventId: number, interval: number) {
+        if (tickEventId < 0) {
             tickEventId = eventId
             control.onEvent(tickEventId, EventBusValue.MICROBIT_EVT_ANY, function () {
                 const machineId = control.eventValue()
-                if (machineId == 1) {
-                    const interval = stateMachine.tick()
-                    if (interval >= 0) {
-                        const nextTick = control.millis() + interval
-                        tickNext(machineId, nextTick)
+                const stateMachine = mainStateMachine
+                if (machineId == stateMachine.machineId) {
+                    if (stateMachine.tick()) {
+                        tickNext(stateMachine.machineId)
                     }
                 }
             })
+            if (interval > 0) {
+                // tick wakeup (for DO actions)
+                loops.everyInterval(interval, function () {
+                    const stateMachine = mainStateMachine
+                    tickNext(stateMachine.machineId)
+                })
+            }
+
         }
     }
 
@@ -452,20 +450,20 @@ namespace sstate {
     }
 
     /**
-     * define state
+     * declare state
      * @param arg state (States)
      * @param body code to run
      */
-    //% block="define $arg : $state"
+    //% block="declare $arg : $state"
     //% arg.shadow="state_enum_shim"
     //% draggableParameters="reporter"
     //% weight=140
-    export function defineState(arg: number, body: (state: number) => void) {
+    export function declareState(arg: number, body: (state: number) => void) {
         body(arg)
     }
 
     /**
-     * define ENTRY action.
+     * declare ENTRY action.
      * prev is a previous state.
      * @param state state (States)
      * @param body code to run
@@ -476,12 +474,12 @@ namespace sstate {
     //% handlerStatement
     //% weight=130
     //% group="Action"
-    export function defineEntry(state: number, body: (prev: number) => void) {
-        stateMachine.defineEntry(state, body)
+    export function declareEntry(state: number, body: (prev: number) => void) {
+        mainStateMachine.declareEntry(state, body)
     }
 
     /**
-     * define DO action.
+     * declare DO action.
      * @param state state (States)
      * @param ms interval time (milliseconds)
      * @param body code to run
@@ -492,12 +490,12 @@ namespace sstate {
     //% handlerStatement
     //% weight=120
     //% group="Action"
-    export function defineDo(state: number, ms: number, body: () => void) {
-        stateMachine.defineDo(state, ms, body)
+    export function declareDo(state: number, ms: number, body: () => void) {
+        mainStateMachine.declareDo(state, ms, body)
     }
 
     /**
-     * define EXIT action.
+     * declare EXIT action.
      * next is a next state.
      * @param state state (States)
      * @param body code to run
@@ -508,12 +506,12 @@ namespace sstate {
     //% handlerStatement
     //% weight=110
     //% group="Action"
-    export function defineExit(state: number, body: (next: number) => void) {
-        stateMachine.defineExit(state, body)
+    export function declareExit(state: number, body: (next: number) => void) {
+        mainStateMachine.declareExit(state, body)
     }
 
     /**
-     * define transition.
+     * declare transition.
      * @param from state from (States)
      * @param to state to (States)
      * @param trigger trigger (Triggers)
@@ -524,9 +522,13 @@ namespace sstate {
     //% trigger.shadow="trigger_enum_shim"
     //% weight=100
     //% group="Transition"
-    export function defineTransition(from: number, to: number, trigger: number) {
-        stateMachine.defineTransition(from, to, trigger)
+    export function declareTransition(from: number, to: number, trigger: number) {
+        mainStateMachine.declareTransition(from, to, trigger)
     }
+
+    const MICROBIT_CUSTOM_ID_BASE = 32768
+    const DEFAULT_TICK_EVENT_ID = MICROBIT_CUSTOM_ID_BASE + 100
+    const DEFAULT_TICK_DO_INTERVAL = 100
 
     /**
      * start state machine
@@ -537,10 +539,9 @@ namespace sstate {
     //% weight=80
     //% group="Command"
     export function start(state: number) {
-        initialTickEventId(DEFALUT_TICK_EVENT_ID)
-        if (stateMachine.start(state)) {
-            const machineId = 1
-            tickNext(machineId, -1)
+        initialTickEventId(DEFAULT_TICK_EVENT_ID, DEFAULT_TICK_DO_INTERVAL)
+        if (mainStateMachine.start(state)) {
+            tickNext(mainStateMachine.machineId)
         }
     }
 
@@ -553,9 +554,8 @@ namespace sstate {
     //% weight=90
     //% group="Command"
     export function fire(trigger: number) {
-        stateMachine.fire(trigger)
-        const machineId = 1
-        tickNext(machineId, -1)
+        mainStateMachine.fire(trigger)
+        tickNext(mainStateMachine.machineId)
     }
 
 }
