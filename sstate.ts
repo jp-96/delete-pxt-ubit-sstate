@@ -7,6 +7,10 @@
 //% groups="['Action', 'Command', 'Declare', 'Transition']"
 namespace sstate {
 
+    const STATE_TERM = -2   // "*"(to)
+    const STATE_INIT = -1   // "*"
+    const TRIGGER_NONE = 0  // ""
+
     /**
      * EntryAction
      */
@@ -72,18 +76,15 @@ namespace sstate {
 
         /**
          * execute DO
-         * @returns >=0: next tick millis, -1: none
          */
-        execute(): number {
+        execute() {
             const tick = control.millis()
             if (this._tickForce || (tick > this._nextTick)) {
                 this._cb()
                 this._tickForce = false
                 this._lastTick = tick
                 this._nextTick = tick + this._ms
-                return this._nextTick // schedule
             }
-            return -1 // none
         }
 
         /**
@@ -175,7 +176,7 @@ namespace sstate {
     class StateMachine {
 
         // machine ID
-        _id: number
+        _machineId: number
 
         // declare
         _declareEntryActions: EntryAction[]
@@ -207,25 +208,25 @@ namespace sstate {
          * @param id (Machines) state machine ID
          */
         constructor(id: number) {
-            this._id = id
+            this._machineId = id
             this._declareEntryActions = []
             this._declareDoActions = []
             this._declareExitActions = []
             this._declareTransitions = []
-            this._state = -1    // <0: initial, >=0: (States)
+            this._state = STATE_INIT    // initial
             this._entryActions = []
             this._doActions = []
             this._exitActions = []
             this._transitions = []
             this._completionTransition = undefined
-            this._defaultState = -1
+            this._defaultState = STATE_TERM
             this._proc = Procs.Unproc
             this._triggerQueue = []
-            this._transitFrom = -2  // terminate
-            this._transitTo = -1    // initial
+            this._transitFrom = STATE_TERM  // terminate
+            this._transitTo = STATE_INIT    // initial
         }
 
-        get id() { return this._id }
+        get machineId() { return this._machineId }
 
         declareEntry(state: number, cb: (prev: number) => void) {
             const item = new EntryAction(state, cb)
@@ -285,10 +286,7 @@ namespace sstate {
 
         _procDo() {
             for (const doProc of this._doActions) {
-                const nextTick = doProc.execute()
-                if (nextTick >= 0) {
-                    tickNext(this._id, nextTick)
-                }
+                doProc.execute()
             }
         }
 
@@ -325,12 +323,12 @@ namespace sstate {
             }
         }
 
-        tick(): number {
-            let tickNext = 0 // now
+        tick(): boolean {
+            let tickNext = true // ticking
             switch (this._proc) {
                 case Procs.Unproc:
                     this._procNone()
-                    tickNext = -1   // none
+                    tickNext = false    // none
                     break;
                 case Procs.StartAndInto:
                     if (this._procStartToInto()) {
@@ -359,7 +357,7 @@ namespace sstate {
                         this._proc = Procs.Exit
                     } else {
                         this._proc = Procs.Do
-                        tickNext = -1   // none, scheduled in _procDo()
+                        tickNext = false    // none
                     }
                     break;
                 case Procs.Exit:
@@ -369,7 +367,7 @@ namespace sstate {
                 default:
                     // panic
                     this._proc = Procs.Panic
-                    tickNext = -1   // none
+                    tickNext = false    // none
                     break;
             }
             return tickNext
@@ -391,76 +389,35 @@ namespace sstate {
         }
     }
 
-    // tick scheduler
-    class TickTask {
-
-        _tickEventId: number
-        _machineId: number
-        _nextTick: number
-
-        constructor(tickEventId: number, machineId: number, nextTick: number) {
-            this._tickEventId = tickEventId
-            this._machineId = machineId
-            this._nextTick = nextTick
-        }
-
-        get tickEventId() { return this._tickEventId }
-        get machineId() { return this._machineId }
-        get nextTick() { return this._nextTick }
-    }
-
-    let tickTasks: TickTask[] = []
-
-    function tickTaskNext(task: TickTask) {
-        const ms = control.millis()
-        if (task.nextTick < 0) {
-            return -1
-        }
-        if (task.nextTick > ms) {
-            // schedule
-            tickTasks.push(task)
-            return 1
-        } else {
-            // now
-            const src = task.tickEventId
-            const value = task.machineId
-            control.raiseEvent(src, value)
-            return 0
-        }
-    }
-
-    loops.everyInterval(100, function () {
-        const ms = control.millis()
-        const n = tickTasks.length
-        for (let i = 0; i < n; i++) {
-            const task = tickTasks.shift()
-            tickTaskNext(task)
-        }
-    })
-
-    let stateMachine: StateMachine = new StateMachine(1)
+    let mainStateMachine: StateMachine = new StateMachine(1)
 
     let tickEventId = -1
 
-    function initialTickEventId(eventId: number) {
+    function tickNext(machineId: number) {
+        control.raiseEvent(tickEventId, machineId)
+    }
+
+    function initialTickEventId(eventId: number, interval: number) {
         if (tickEventId < 0) {
             tickEventId = eventId
             control.onEvent(tickEventId, EventBusValue.MICROBIT_EVT_ANY, function () {
                 const machineId = control.eventValue()
-                if (machineId == stateMachine.id) {
-                    const interval = stateMachine.tick()
-                    if (interval >= 0) {
-                        const nextTick = control.millis() + interval
-                        tickNext(stateMachine.id, nextTick)
+                const stateMachine = mainStateMachine
+                if (machineId == stateMachine.machineId) {
+                    if (stateMachine.tick()) {
+                        tickNext(stateMachine.machineId)
                     }
                 }
             })
-        }
-    }
+            if (interval > 0) {
+                // tick wakeup (for DO actions)
+                loops.everyInterval(interval, function () {
+                    const stateMachine = mainStateMachine
+                    tickNext(stateMachine.machineId)
+                })
+            }
 
-    function tickNext(machineId: number, nextTick: number) {
-        const task = new TickTask(tickEventId, machineId, nextTick)
-        tickTaskNext(task)
+        }
     }
 
     /**
@@ -518,7 +475,7 @@ namespace sstate {
     //% weight=130
     //% group="Action"
     export function declareEntry(state: number, body: (prev: number) => void) {
-        stateMachine.declareEntry(state, body)
+        mainStateMachine.declareEntry(state, body)
     }
 
     /**
@@ -534,7 +491,7 @@ namespace sstate {
     //% weight=120
     //% group="Action"
     export function declareDo(state: number, ms: number, body: () => void) {
-        stateMachine.declareDo(state, ms, body)
+        mainStateMachine.declareDo(state, ms, body)
     }
 
     /**
@@ -550,7 +507,7 @@ namespace sstate {
     //% weight=110
     //% group="Action"
     export function declareExit(state: number, body: (next: number) => void) {
-        stateMachine.declareExit(state, body)
+        mainStateMachine.declareExit(state, body)
     }
 
     /**
@@ -566,11 +523,12 @@ namespace sstate {
     //% weight=100
     //% group="Transition"
     export function declareTransition(from: number, to: number, trigger: number) {
-        stateMachine.declareTransition(from, to, trigger)
+        mainStateMachine.declareTransition(from, to, trigger)
     }
 
     const MICROBIT_CUSTOM_ID_BASE = 32768
-    const DEFALUT_TICK_EVENT_ID = MICROBIT_CUSTOM_ID_BASE + 100
+    const DEFAULT_TICK_EVENT_ID = MICROBIT_CUSTOM_ID_BASE + 100
+    const DEFAULT_TICK_DO_INTERVAL = 100
 
     /**
      * start state machine
@@ -581,9 +539,9 @@ namespace sstate {
     //% weight=80
     //% group="Command"
     export function start(state: number) {
-        initialTickEventId(DEFALUT_TICK_EVENT_ID)
-        if (stateMachine.start(state)) {
-            tickNext(stateMachine.id, -1)
+        initialTickEventId(DEFAULT_TICK_EVENT_ID, DEFAULT_TICK_DO_INTERVAL)
+        if (mainStateMachine.start(state)) {
+            tickNext(mainStateMachine.machineId)
         }
     }
 
@@ -596,8 +554,8 @@ namespace sstate {
     //% weight=90
     //% group="Command"
     export function fire(trigger: number) {
-        stateMachine.fire(trigger)
-        tickNext(stateMachine.id, -1)
+        mainStateMachine.fire(trigger)
+        tickNext(mainStateMachine.machineId)
     }
 
 }
