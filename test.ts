@@ -1,36 +1,25 @@
 // tests go here; this will not be compiled when this package is used as an extension.
-enum States {
-    Idle,
-    Off,
-    On,
-    Blink,
-    Blink2
-}
-enum Triggers {
-    Completion,
-    A,
-    B
-}
-mstate.declareState(States.Idle, function (state) {
+
+mstate.declareState("Idle", function (state) {
     mstate.declareExit(state, function (next) {
         basic.showString("to:" + next + ">")
     })
-    mstate.declareTransition(state, States.Blink2, Triggers.Completion)
+    mstate.declareTransition(state, "Blink2", "")
 })
-mstate.declareState(States.Off, function (state) {
+mstate.declareState("Off", function (state) {
     mstate.declareEntry(state, function (prev) {
         basic.clearScreen()
     })
-    mstate.declareTransition(state, States.On, Triggers.A)
+    mstate.declareTransition(state, "On", "A")
 })
-mstate.declareState(States.On, function (state) {
+mstate.declareState("On", function (state) {
     mstate.declareEntry(state, function (prev) {
         basic.showIcon(IconNames.Heart)
     })
-    mstate.declareTransition(state, States.Blink, Triggers.A)
-    mstate.declareTransition(state, States.Off, Triggers.B)
+    mstate.declareTransition(state, "Blink", "A")
+    mstate.declareTransition(state, "Off", "B")
 })
-mstate.declareState(States.Blink, function (state) {
+mstate.declareState("Blink", function (state) {
     mstate.declareEntry(state, function (prev) {
         blinkingState = 0
     })
@@ -46,12 +35,12 @@ mstate.declareState(States.Blink, function (state) {
     mstate.declareExit(state, function (next) {
         led.setBrightness(255)
     })
-    mstate.declareTransition(state, States.Blink2, Triggers.A)
-    mstate.declareTransition(state, States.Off, Triggers.B)
+    mstate.declareTransition(state, "Blink2", "A")
+    mstate.declareTransition(state, "Off", "B")
 })
-mstate.declareState(States.Blink2, function (state) {
+mstate.declareState("Blink2", function (state) {
     mstate.declareEntry(state, function (prev) {
-        if (States.Idle == prev) {
+        if ("Idle" == prev) {
             basic.showIcon(IconNames.Butterfly)
         }
         blinkingState = 0
@@ -68,14 +57,14 @@ mstate.declareState(States.Blink2, function (state) {
     mstate.declareExit(state, function (next) {
         led.setBrightness(255)
     })
-    mstate.declareTransition(state, States.On, Triggers.A)
-    mstate.declareTransition(state, States.Off, Triggers.B)
+    mstate.declareTransition(state, "On", "A")
+    mstate.declareTransition(state, "Off", "B")
 })
 input.onButtonPressed(Button.A, function () {
-    mstate.fire(Triggers.A)
+    mstate.fire("A")
 })
 input.onButtonPressed(Button.B, function () {
-    mstate.fire(Triggers.B)
+    mstate.fire("B")
 })
 let blinkingState = 0
-mstate.start(States.Idle)
+mstate.start("Idle")
