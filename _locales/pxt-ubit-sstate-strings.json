@@ -1,6 +1,4 @@
 {
-  "mstate._stateEnumShim|block": "State $arg",
-  "mstate._triggerEnumShim|block": "Trigger $arg",
   "mstate.declareDo|block": "on do every $ms ms : $state",
   "mstate.declareEntry|block": "on entry from $prev : $state",
   "mstate.declareExit|block": "on exit to $next : $state",

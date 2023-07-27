@@ -1,5 +1,7 @@
 /**
  * mstate blocks
+ * Defining blocks: https://makecode.com/defining-blocks
+ * Playground: https://makecode.com/playground
  * icon: a Unicode identifier for an icon from the Font Awesome icon set.
  *       http://fontawesome.io/icons
  */
@@ -7,9 +9,9 @@
 //% groups="['Action', 'Command', 'Declare', 'Transition']"
 namespace mstate {
 
-    const STATE_FINAL = -2   // "*"(FINAL)
-    const STATE_INITIAL = -1   // "*"(INITIAL)
-    const TRIGGER_NONE = 0  // ""(completion)
+    const STATE_INITIAL = -2    // "*"(INITIAL)
+    const STATE_FINAL = -1      // "*"(FINAL)
+    const TRIGGER_NONE = 0      // ""(completion)
 
     const MICROBIT_CUSTOM_ID_BASE = 32768
     const DEFAULT_UPDATE_EVENT_ID = MICROBIT_CUSTOM_ID_BASE + 100
@@ -287,7 +289,7 @@ namespace mstate {
             })
             this._exitActions = this._declareExitActions.filter((item) => item.state == next)
             this._transitions = this._declareTransitions.filter((item) => item.from == next)
-            this._completionTransition = this._transitions.find((item) => item.trigger == 0)
+            this._completionTransition = this._transitions.find((item) => item.trigger == TRIGGER_NONE)
         }
 
         _procEnter() {
@@ -438,134 +440,161 @@ namespace mstate {
 
     let mainStateMachine: StateMachine = new StateMachine(1)    // state machine ID is used as event value
 
-    /**
-     * States
-     */
-    //% shim=ENUM_GET
-    //% blockId=state_enum_shim
-    //% block="State $arg"
-    //% enumName="States"
-    //% enumMemberName="state"
-    //% enumPromptHint="e.g. LED_On, LED_Off, LED_Blink ..."
-    //% enumInitialMembers="Idle"
-    export function _stateEnumShim(arg: number) {
-        return arg;
+    // ID-Name conv
+    class IdName {
+        _id: number
+        _name: string
+        constructor(id: number, name: string) {
+            this._id = id
+            this._name = name
+        }
+        get id() { return this._id }
+        get name() { return this._name }
     }
 
-    /**
-     * Triggers
-     * notes: Triggers.Completion for the trigger, the transition is a Completion Transition.
-     */
-    //% shim=ENUM_GET
-    //% blockId=trigger_enum_shim
-    //% block="Trigger $arg"
-    //% enumName="Triggers"
-    //% enumMemberName="trigger"
-    //% enumPromptHint="e.g. On, Off, Up, Down ..."
-    //% enumInitialMembers="Completion"
-    export function _triggerEnumShim(arg: number) {
-        return arg;
+    let idNameList: IdName[] = []
+
+    function getIdOrNew(name: string) {
+        if ("*" == name) {
+            return STATE_FINAL
+        }
+        let obj: IdName = idNameList.find((item) => item.name == name)
+        if (obj == undefined) {
+            obj = new IdName(idNameList.length, name)
+            idNameList.push(obj)
+        }
+        return obj.id
     }
+
+    function convName(id: number) {
+        if (id == STATE_INITIAL) {
+            return "*"
+        }
+        if (id == STATE_FINAL) {
+            return "*"
+        }
+        let obj: IdName = idNameList.find((item) => item.id == id)
+        if (obj) {
+            return obj.name
+        }
+        return "(undefined)"
+    }
+
+    // { id: 0, name: "" } を追加 - const TRIGGER_NONE = 0      // ""(completion)
+    getIdOrNew("")
 
     /**
      * declare state
-     * @param arg state (States)
+     * @param arg state
      * @param body code to run
      */
     //% block="declare $arg : $state"
-    //% arg.shadow="state_enum_shim"
+    //% arg.defl="State1"
     //% draggableParameters="reporter"
     //% weight=140
-    export function declareState(arg: number, body: (state: number) => void) {
+    export function declareState(arg: string, body: (state: string) => void) {
         body(arg)
     }
 
     /**
      * declare ENTRY action.
      * prev is a previous state.
-     * @param state state (States)
+     * @param state state
      * @param body code to run
      */
     //% block="on entry from $prev : $state"
-    //% state.shadow="state_enum_shim"
+    //% state.defl="State1"
     //% draggableParameters="reporter"
     //% handlerStatement
     //% weight=130
     //% group="Action"
-    export function declareEntry(state: number, body: (prev: number) => void) {
-        mainStateMachine.declareEntry(state, body)
+    export function declareEntry(state: string, body: (prev: string) => void) {
+        mainStateMachine.declareEntry(
+            getIdOrNew(state),
+            (prev: number) => body(convName(prev))
+        )
     }
 
     /**
      * declare DO action.
-     * @param state state (States)
+     * @param state state
      * @param ms interval time (milliseconds)
      * @param body code to run
      */
     //% block="on do every $ms ms : $state"
-    //% state.shadow="state_enum_shim"
+    //% state.defl="State1"
     //% ms.shadow="timePicker"
     //% handlerStatement
     //% weight=120
     //% group="Action"
-    export function declareDo(state: number, ms: number, body: () => void) {
-        mainStateMachine.declareDo(state, ms, body)
+    export function declareDo(state: string, ms: number, body: () => void) {
+        mainStateMachine.declareDo(
+            getIdOrNew(state),
+            ms,
+            body
+        )
     }
 
     /**
      * declare EXIT action.
      * next is a next state.
-     * @param state state (States)
+     * @param state state
      * @param body code to run
      */
     //% block="on exit to $next : $state"
-    //% state.shadow="state_enum_shim"
+    //% state.defl="State1"
     //% draggableParameters="reporter"
     //% handlerStatement
     //% weight=110
     //% group="Action"
-    export function declareExit(state: number, body: (next: number) => void) {
-        mainStateMachine.declareExit(state, body)
+    export function declareExit(state: string, body: (next: string) => void) {
+        mainStateMachine.declareExit(
+            getIdOrNew(state),
+            (next: number) => body(convName(next))
+        )
     }
 
     /**
      * declare transition.
-     * @param from state from (States)
-     * @param to state to (States)
-     * @param trigger trigger (Triggers)
+     * @param from state from
+     * @param to state to
+     * @param trigger trigger
      */
     //% block="trasition to $to when $trigger occur : $from"
-    //% from.shadow="state_enum_shim"
-    //% to.shadow="state_enum_shim"
-    //% trigger.shadow="trigger_enum_shim"
+    //% from.defl="State1"
+    //% to.defl="State2"
+    //% trigger.defl="Trigger1"
     //% weight=100
     //% group="Transition"
-    export function declareTransition(from: number, to: number, trigger: number) {
-        mainStateMachine.declareTransition(from, to, trigger)
+    export function declareTransition(from: string, to: string, trigger: string) {
+        mainStateMachine.declareTransition(
+            getIdOrNew(from),       // "*" is invalid
+            getIdOrNew(to),
+            getIdOrNew(trigger)
+        )
     }
 
     /**
      * start state machine
-     * @param state default state (States)
+     * @param state default state
      */
     //% block="start $state"
-    //% state.shadow="state_enum_shim"
+    //% state.defl="State1"
     //% weight=80
     //% group="Command"
-    export function start(state: number) {
-        mainStateMachine.start(state)
+    export function start(state: string) {
+        mainStateMachine.start(getIdOrNew(state))
     }
 
     /**
      * fire trigger
-     * @param trigger trigger (Triggers)
+     * @param trigger trigger
      */
     //% block="fire $trigger"
-    //% trigger.shadow="trigger_enum_shim"
+    //% trigger.defl="Trigger1"
     //% weight=90
     //% group="Command"
-    export function fire(trigger: number) {
-        mainStateMachine.fire(trigger)
+    export function fire(trigger: string) {
+        mainStateMachine.fire(getIdOrNew(trigger))
     }
-
 }
