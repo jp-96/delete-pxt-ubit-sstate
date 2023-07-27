@@ -11,30 +11,30 @@ enum Triggers {
     A,
     B
 }
-sstate.declareState(States.Idle, function (state) {
-    sstate.declareExit(state, function (next) {
+mstate.declareState(States.Idle, function (state) {
+    mstate.declareExit(state, function (next) {
         basic.showString("to:" + next + ">")
     })
-    sstate.declareTransition(state, States.Blink2, Triggers.Completion)
+    mstate.declareTransition(state, States.Blink2, Triggers.Completion)
 })
-sstate.declareState(States.Off, function (state) {
-    sstate.declareEntry(state, function (prev) {
+mstate.declareState(States.Off, function (state) {
+    mstate.declareEntry(state, function (prev) {
         basic.clearScreen()
     })
-    sstate.declareTransition(state, States.On, Triggers.A)
+    mstate.declareTransition(state, States.On, Triggers.A)
 })
-sstate.declareState(States.On, function (state) {
-    sstate.declareEntry(state, function (prev) {
+mstate.declareState(States.On, function (state) {
+    mstate.declareEntry(state, function (prev) {
         basic.showIcon(IconNames.Heart)
     })
-    sstate.declareTransition(state, States.Blink, Triggers.A)
-    sstate.declareTransition(state, States.Off, Triggers.B)
+    mstate.declareTransition(state, States.Blink, Triggers.A)
+    mstate.declareTransition(state, States.Off, Triggers.B)
 })
-sstate.declareState(States.Blink, function (state) {
-    sstate.declareEntry(state, function (prev) {
+mstate.declareState(States.Blink, function (state) {
+    mstate.declareEntry(state, function (prev) {
         blinkingState = 0
     })
-    sstate.declareDo(state, 500, function () {
+    mstate.declareDo(state, 500, function () {
         if (1 == blinkingState) {
             led.setBrightness(200)
             blinkingState = 0
@@ -43,20 +43,20 @@ sstate.declareState(States.Blink, function (state) {
             blinkingState = 1
         }
     })
-    sstate.declareExit(state, function (next) {
+    mstate.declareExit(state, function (next) {
         led.setBrightness(255)
     })
-    sstate.declareTransition(state, States.Blink2, Triggers.A)
-    sstate.declareTransition(state, States.Off, Triggers.B)
+    mstate.declareTransition(state, States.Blink2, Triggers.A)
+    mstate.declareTransition(state, States.Off, Triggers.B)
 })
-sstate.declareState(States.Blink2, function (state) {
-    sstate.declareEntry(state, function (prev) {
+mstate.declareState(States.Blink2, function (state) {
+    mstate.declareEntry(state, function (prev) {
         if (States.Idle == prev) {
             basic.showIcon(IconNames.Butterfly)
         }
         blinkingState = 0
     })
-    sstate.declareDo(state, 100, function () {
+    mstate.declareDo(state, 100, function () {
         if (1 == blinkingState) {
             led.setBrightness(255)
             blinkingState = 0
@@ -65,17 +65,17 @@ sstate.declareState(States.Blink2, function (state) {
             blinkingState = 1
         }
     })
-    sstate.declareExit(state, function (next) {
+    mstate.declareExit(state, function (next) {
         led.setBrightness(255)
     })
-    sstate.declareTransition(state, States.On, Triggers.A)
-    sstate.declareTransition(state, States.Off, Triggers.B)
+    mstate.declareTransition(state, States.On, Triggers.A)
+    mstate.declareTransition(state, States.Off, Triggers.B)
 })
 input.onButtonPressed(Button.A, function () {
-    sstate.fire(Triggers.A)
+    mstate.fire(Triggers.A)
 })
 input.onButtonPressed(Button.B, function () {
-    sstate.fire(Triggers.B)
+    mstate.fire(Triggers.B)
 })
 let blinkingState = 0
-sstate.start(States.Idle)
+mstate.start(States.Idle)

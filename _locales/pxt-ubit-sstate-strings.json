@@ -1,13 +1,16 @@
 {
-  "sstate.defineDo|block": "state: $name DO/, every $interval ms",
-  "sstate.defineEntry|block": "state: $name ENTRY/, $prevName",
-  "sstate.defineExit|block": "state: $name EXIT/, $nextName",
-  "sstate.defineState|block": "define state: $name, $stateName",
-  "sstate.defineTransition|block": "state: $name TRIGGER: $trigger TO: $to",
-  "sstate.fire|block": "fire trigger $trigger",
-  "sstate.start|block": "start $initial",
-  "sstate|block": "sstate",
-  "{id:category}Sstate": "Sstate",
+  "mstate._stateEnumShim|block": "State $arg",
+  "mstate._triggerEnumShim|block": "Trigger $arg",
+  "mstate.declareDo|block": "on do every $ms ms : $state",
+  "mstate.declareEntry|block": "on entry from $prev : $state",
+  "mstate.declareExit|block": "on exit to $next : $state",
+  "mstate.declareState|block": "declare $arg : $state",
+  "mstate.declareTransition|block": "trasition to $to when $trigger occur : $from",
+  "mstate.fire|block": "fire $trigger",
+  "mstate.start|block": "start $state",
+  "mstate|block": "mstate",
+  "{id:category}Mstate": "Mstate",
+  "{id:group}Action": "Action",
   "{id:group}Command": "Command",
-  "{id:group}Define": "Define"
+  "{id:group}Transition": "Transition"
 }

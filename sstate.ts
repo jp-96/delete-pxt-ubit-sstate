@@ -1,15 +1,19 @@
 /**
- * sstate blocks
+ * mstate blocks
  * icon: a Unicode identifier for an icon from the Font Awesome icon set.
  *       http://fontawesome.io/icons
  */
 //% weight=100 color="#4C97FF" icon="\uf362"
 //% groups="['Action', 'Command', 'Declare', 'Transition']"
-namespace sstate {
+namespace mstate {
 
-    const STATE_TERM = -2   // "*"(to)
-    const STATE_INIT = -1   // "*"
-    const TRIGGER_NONE = 0  // ""
+    const STATE_FINAL = -2   // "*"(FINAL)
+    const STATE_INITIAL = -1   // "*"(INITIAL)
+    const TRIGGER_NONE = 0  // ""(completion)
+
+    const MICROBIT_CUSTOM_ID_BASE = 32768
+    const DEFAULT_UPDATE_EVENT_ID = MICROBIT_CUSTOM_ID_BASE + 100
+    const DEFAULT_EVENT_LOOP_INTERVAL = 100
 
     /**
      * EntryAction
@@ -52,7 +56,7 @@ namespace sstate {
         // callback tick
         _lastTick: number
         _nextTick: number
-        _tickForce: boolean
+        _forceTick: boolean
 
         /**
          * constructor
@@ -66,7 +70,7 @@ namespace sstate {
             this._cb = cb
             this._lastTick = control.millis()
             this._nextTick = this._lastTick
-            this._tickForce = true
+            this._forceTick = true
         }
 
         /**
@@ -79,19 +83,19 @@ namespace sstate {
          */
         execute() {
             const tick = control.millis()
-            if (this._tickForce || (tick > this._nextTick)) {
+            if (this._forceTick || (tick > this._nextTick)) {
                 this._cb()
-                this._tickForce = false
+                this._forceTick = false
                 this._lastTick = tick
                 this._nextTick = tick + this._ms
             }
         }
 
         /**
-         * force callback
+         * force callback, execute DO
          */
         forceTick() {
-            this._tickForce = true
+            this._forceTick = true
         }
     }
 
@@ -163,8 +167,8 @@ namespace sstate {
     }
 
     enum Procs {
-        Unproc,
-        StartAndInto,
+        Idle,
+        Start,
         Into,
         Enter,
         Do,
@@ -173,10 +177,20 @@ namespace sstate {
         Panic
     }
 
+    enum ProcNext {
+        Break,
+        Loop,
+        Event
+    }
+
     class StateMachine {
 
-        // machine ID
+        // system
         _machineId: number
+        _initialized: boolean
+        _updateEventId: number
+        _eventLoopInterval: number
+        _enabledUpdateEvent: boolean
 
         // declare
         _declareEntryActions: EntryAction[]
@@ -194,7 +208,7 @@ namespace sstate {
 
         // proc
         _defaultState: number
-        _proc: Procs
+        _procNext: Procs
 
         // (Triggers[]) triggers
         _triggerQueue: number[]
@@ -205,25 +219,30 @@ namespace sstate {
 
         /**
          * constructor
-         * @param id (Machines) state machine ID
+         * The state machine ID is used as the event value, so it must be greater than 0
+         * @param id (Machines) state machine ID (>0)
          */
         constructor(id: number) {
             this._machineId = id
+            this._initialized = false
+            this._updateEventId = DEFAULT_UPDATE_EVENT_ID
+            this._eventLoopInterval = DEFAULT_EVENT_LOOP_INTERVAL
+            this._enabledUpdateEvent = false
             this._declareEntryActions = []
             this._declareDoActions = []
             this._declareExitActions = []
             this._declareTransitions = []
-            this._state = STATE_INIT    // initial
+            this._state = STATE_INITIAL    // initial
             this._entryActions = []
             this._doActions = []
             this._exitActions = []
             this._transitions = []
             this._completionTransition = undefined
-            this._defaultState = STATE_TERM
-            this._proc = Procs.Unproc
+            this._defaultState = STATE_FINAL
+            this._procNext = Procs.Idle
             this._triggerQueue = []
-            this._transitFrom = STATE_TERM  // terminate
-            this._transitTo = STATE_INIT    // initial
+            this._transitFrom = STATE_FINAL  // terminate
+            this._transitTo = STATE_INITIAL    // initial
         }
 
         get machineId() { return this._machineId }
@@ -248,17 +267,12 @@ namespace sstate {
             this._declareTransitions.push(item)
         }
 
-        _procNone() {
-            // nop
-        }
-
-        _procStartToInto(): boolean {
-            this._transitFrom = this._transitTo
+        _procStart() {
+            this._transitFrom = STATE_INITIAL
             this._transitTo = this._defaultState
-            return this._procInto()
         }
 
-        _procInto(): boolean {
+        _procInto() {
             const next = this._transitTo
             // current state
             this._state = next
@@ -274,7 +288,6 @@ namespace sstate {
             this._exitActions = this._declareExitActions.filter((item) => item.state == next)
             this._transitions = this._declareTransitions.filter((item) => item.from == next)
             this._completionTransition = this._transitions.find((item) => item.trigger == 0)
-            return (this._state >= 0)
         }
 
         _procEnter() {
@@ -323,60 +336,92 @@ namespace sstate {
             }
         }
 
-        tick(): boolean {
-            let tickNext = true // ticking
-            switch (this._proc) {
-                case Procs.Unproc:
-                    this._procNone()
-                    tickNext = false    // none
+        _proc(): ProcNext {
+            let ret = ProcNext.Loop // (default) loop
+            switch (this._procNext) {
+                case Procs.Idle:
+                    ret = ProcNext.Break    // break
                     break;
-                case Procs.StartAndInto:
-                    if (this._procStartToInto()) {
-                        this._proc = Procs.Enter
-                    } else {
-                        this._proc = Procs.Unproc
-                    }
+                case Procs.Start:
+                    this._procStart()
+                    this._procNext = Procs.Into
+                    ret = ProcNext.Event    // event, for start() function.
                     break;
                 case Procs.Into:
-                    if (this._procInto()) {
-                        this._proc = Procs.Enter
+                    this._procInto()
+                    if (this._state < 0) {
+                        this._procNext = Procs.Idle
                     } else {
-                        this._proc = Procs.Unproc
+                        this._procNext = Procs.Enter
                     }
                     break;
                 case Procs.Enter:
                     this._procEnter()
-                    this._proc = Procs.Do
+                    this._procNext = Procs.Do
                     break;
                 case Procs.Do:
                     this._procDo()
-                    this._proc = Procs.Transit
+                    this._procNext = Procs.Transit
+                    ret = ProcNext.Event    // event
                     break;
                 case Procs.Transit:
                     if (this._procTransit()) {
-                        this._proc = Procs.Exit
+                        this._procNext = Procs.Exit
                     } else {
-                        this._proc = Procs.Do
-                        tickNext = false    // none
+                        this._procNext = Procs.Do
                     }
                     break;
                 case Procs.Exit:
                     this._procExit()
-                    this._proc = Procs.Into
+                    this._procNext = Procs.Into
                     break;
                 default:
                     // panic
-                    this._proc = Procs.Panic
-                    tickNext = false    // none
+                    this._procNext = Procs.Panic
+                    ret = ProcNext.Break    // break
                     break;
             }
-            return tickNext
+            return ret
+        }
+
+        _update() {
+            let next: ProcNext
+            do {
+                next = this._proc()
+            } while (next == ProcNext.Loop)
+            this._enabledUpdateEvent = (next == ProcNext.Event)
+        }
+
+        _raiseUpdateEvent(force: boolean = false) {
+            if (force || this._enabledUpdateEvent) {
+                control.raiseEvent(this._updateEventId, this._machineId)
+            }
+        }
+
+        _initialize() {
+            if (!this._initialized) {
+                this._initialized = true
+                const inst: StateMachine = this
+                // update event handler
+                const updateEventId = this._updateEventId
+                const machineId = this._machineId
+                control.onEvent(updateEventId, machineId, function () {
+                    inst._update()
+                })
+                // update event loop
+                const eventLoopInterval = this._eventLoopInterval
+                loops.everyInterval(eventLoopInterval, function () {
+                    inst._raiseUpdateEvent()
+                })
+            }
         }
 
         start(state: number): boolean {
-            if (this._proc == Procs.Unproc) {
+            this._initialize()
+            if (this._procNext == Procs.Idle) {
                 this._defaultState = state
-                this._proc = Procs.StartAndInto
+                this._procNext = Procs.Start
+                this._update()
                 return true
             } else {
                 return false
@@ -386,39 +431,12 @@ namespace sstate {
         fire(trigger: number) {
             // queuing
             this._triggerQueue.push(trigger)
+            // update event
+            this._raiseUpdateEvent(true)
         }
     }
 
-    let mainStateMachine: StateMachine = new StateMachine(1)
-
-    let tickEventId = -1
-
-    function tickNext(machineId: number) {
-        control.raiseEvent(tickEventId, machineId)
-    }
-
-    function initialTickEventId(eventId: number, interval: number) {
-        if (tickEventId < 0) {
-            tickEventId = eventId
-            control.onEvent(tickEventId, EventBusValue.MICROBIT_EVT_ANY, function () {
-                const machineId = control.eventValue()
-                const stateMachine = mainStateMachine
-                if (machineId == stateMachine.machineId) {
-                    if (stateMachine.tick()) {
-                        tickNext(stateMachine.machineId)
-                    }
-                }
-            })
-            if (interval > 0) {
-                // tick wakeup (for DO actions)
-                loops.everyInterval(interval, function () {
-                    const stateMachine = mainStateMachine
-                    tickNext(stateMachine.machineId)
-                })
-            }
-
-        }
-    }
+    let mainStateMachine: StateMachine = new StateMachine(1)    // state machine ID is used as event value
 
     /**
      * States
@@ -526,10 +544,6 @@ namespace sstate {
         mainStateMachine.declareTransition(from, to, trigger)
     }
 
-    const MICROBIT_CUSTOM_ID_BASE = 32768
-    const DEFAULT_TICK_EVENT_ID = MICROBIT_CUSTOM_ID_BASE + 100
-    const DEFAULT_TICK_DO_INTERVAL = 100
-
     /**
      * start state machine
      * @param state default state (States)
@@ -539,10 +553,7 @@ namespace sstate {
     //% weight=80
     //% group="Command"
     export function start(state: number) {
-        initialTickEventId(DEFAULT_TICK_EVENT_ID, DEFAULT_TICK_DO_INTERVAL)
-        if (mainStateMachine.start(state)) {
-            tickNext(mainStateMachine.machineId)
-        }
+        mainStateMachine.start(state)
     }
 
     /**
@@ -555,7 +566,6 @@ namespace sstate {
     //% group="Command"
     export function fire(trigger: number) {
         mainStateMachine.fire(trigger)
-        tickNext(mainStateMachine.machineId)
     }
 
 }
