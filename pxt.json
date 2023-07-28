@@ -7,7 +7,6 @@
     },
     "files": [
         "README.md",
-        "icon.png",
         "enums.d.ts",
         "shims.d.ts",
         "sstate.ts"
