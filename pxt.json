@@ -1,7 +1,7 @@
 {
     "name": "pxt-ubit-sstate",
     "version": "0.5.0",
-    "description": "",
+    "description": "(description: this description is written in pxt.json)",
     "dependencies": {
         "core": "*"
     },
